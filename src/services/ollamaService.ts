@@ -99,15 +99,24 @@ export class OllamaService {
                 return defaultModel;
             }
 
-            // 모델 우선순위 (로컬 오픈소스 코딩 성능 중심)
+            // 모델 우선순위
+            // 1) 고성능 코딩 모델 우선
+            // 2) 없으면 경량 로컬 fallback 사용
             const modelPriorities = [
                 /^qwen2\.5-coder:32b/i,
-                /^qwen2\.5-coder/i,
+                /^qwen2\.5-coder:14b/i,
+                /^qwen2\.5-coder:7b/i,
                 /^deepseek-coder-v2/i,
-                /^deepseek-coder/i,
+                /^deepseek-coder:33b/i,
                 /^glm4/i,
                 /^codestral/i,
                 /^codellama/i,
+                /^qwen2\.5-coder:3b/i,
+                /^qwen2\.5-coder:1\.5b/i,
+                /^deepseek-coder:1\.3b/i,
+                /^phi3:mini/i,
+                /^qwen2\.5-coder/i,
+                /^deepseek-coder/i,
                 /^qwen/i,
                 /^llama3/i,
                 /^llama/i,
