@@ -23,6 +23,9 @@ export interface OllamaGenerateResponse {
 export class OllamaService {
     private client: AxiosInstance;
     private config: vscode.WorkspaceConfiguration;
+    private cachedModel: string | null = null;
+    private modelCacheTime: number = 0;
+    private readonly MODEL_CACHE_DURATION = 30000; // 30초 캐시
 
     constructor() {
         this.config = vscode.workspace.getConfiguration('opencopilot');
@@ -43,6 +46,13 @@ export class OllamaService {
                 const newURL = this.config.get<string>('ollamaUrl', 'http://localhost:11434');
                 this.client.defaults.baseURL = newURL;
             }
+            if (e.affectsConfiguration('opencopilot.modelMode') || 
+                e.affectsConfiguration('opencopilot.model')) {
+                // 모델 관련 설정 변경 시 캐시 초기화
+                this.cachedModel = null;
+                this.modelCacheTime = 0;
+                console.log('[손종욱 AI 비서] 모델 설정이 변경되었습니다.');
+            }
         });
     }
 
@@ -56,11 +66,79 @@ export class OllamaService {
         }
     }
 
+    /**
+     * 사용할 모델을 가져옵니다.
+     * modelMode가 'auto'인 경우 사용 가능한 모델을 자동으로 선택합니다.
+     * modelMode가 'manual'인 경우 설정된 모델을 반환합니다.
+     */
+    async getModel(): Promise<string> {
+        const modelMode = this.config.get<string>('modelMode', 'auto');
+        
+        if (modelMode === 'manual') {
+            // 수동 모드: 설정된 모델 반환
+            const manualModel = this.config.get<string>('model', 'deepseek-coder:6.7b');
+            console.log(`[손종욱 AI 비서] 수동 모드: ${manualModel} 모델 사용`);
+            return manualModel;
+        }
+
+        // Auto 모드: 캐시 확인
+        const now = Date.now();
+        if (this.cachedModel && (now - this.modelCacheTime) < this.MODEL_CACHE_DURATION) {
+            return this.cachedModel;
+        }
+
+        // 사용 가능한 모델 자동 선택
+        try {
+            const availableModels = await this.listModels();
+            
+            if (availableModels.length === 0) {
+                console.warn('[손종욱 AI 비서] 사용 가능한 모델이 없습니다. 기본 모델 사용');
+                const defaultModel = this.config.get<string>('model', 'deepseek-coder:6.7b');
+                this.cachedModel = defaultModel;
+                this.modelCacheTime = now;
+                return defaultModel;
+            }
+
+            // 모델 우선순위 (한국어 지원 및 코딩 성능 기준)
+            const modelPriorities = [
+                /^glm4/i,              // GLM-4 (한국어 최고)
+                /^deepseek-coder/i,    // DeepSeek Coder (코딩 전문)
+                /^codellama/i,         // CodeLlama (코딩)
+                /^qwen/i,              // Qwen (한국어 지원)
+                /^mistral/i,           // Mistral
+                /^llama/i,             // Llama
+            ];
+
+            // 우선순위에 따라 모델 선택
+            for (const priority of modelPriorities) {
+                const matchedModel = availableModels.find(m => priority.test(m));
+                if (matchedModel) {
+                    console.log(`[손종욱 AI 비서] Auto 모드: ${matchedModel} 모델 자동 선택`);
+                    this.cachedModel = matchedModel;
+                    this.modelCacheTime = now;
+                    return matchedModel;
+                }
+            }
+
+            // 우선순위에 없으면 첫 번째 모델 사용
+            const selectedModel = availableModels[0];
+            console.log(`[손종욱 AI 비서] Auto 모드: ${selectedModel} 모델 자동 선택 (기본)`);
+            this.cachedModel = selectedModel;
+            this.modelCacheTime = now;
+            return selectedModel;
+
+        } catch (error) {
+            console.error('[손종욱 AI 비서] 모델 자동 선택 실패:', error);
+            const defaultModel = this.config.get<string>('model', 'deepseek-coder:6.7b');
+            return defaultModel;
+        }
+    }
+
     async generateCompletion(
         prompt: string,
         onStream?: (chunk: string) => void
     ): Promise<string> {
-        const model = this.config.get<string>('model', 'deepseek-coder:6.7b');
+        const model = await this.getModel();
         const temperature = this.config.get<number>('temperature', 0.2);
         const maxTokens = this.config.get<number>('maxTokens', 2000);
 
@@ -146,7 +224,7 @@ export class OllamaService {
         onStream?: (chunk: string) => void
     ): Promise<string> {
         // Ollama의 chat API 사용
-        const model = this.config.get<string>('model', 'deepseek-coder:6.7b');
+        const model = await this.getModel();
         const temperature = this.config.get<number>('temperature', 0.2);
 
         try {

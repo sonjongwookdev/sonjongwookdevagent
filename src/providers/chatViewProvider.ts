@@ -13,7 +13,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     constructor(
         private readonly _extensionUri: vscode.Uri,
         private readonly ollamaService: OllamaService
-    ) {}
+    ) {
+        // 설정 변경 감지
+        vscode.workspace.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('opencopilot.modelMode') || 
+                e.affectsConfiguration('opencopilot.model')) {
+                this.updateModelInfo();
+            }
+        });
+    }
 
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
@@ -28,6 +36,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         };
 
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+
+        // 초기 모델 정보 전송
+        this.updateModelInfo();
 
         // 웹뷰 메시지 처리
         webviewView.webview.onDidReceiveMessage(async (data) => {
@@ -127,6 +138,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
 
         return context;
+    }
+
+    private async updateModelInfo(): Promise<void> {
+        if (!this._view) {
+            return;
+        }
+
+        try {
+            const config = vscode.workspace.getConfiguration('opencopilot');
+            const modelMode = config.get<string>('modelMode', 'auto');
+            const currentModel = await this.ollamaService.getModel();
+
+            this._view.webview.postMessage({
+                type: 'updateModel',
+                model: currentModel,
+                mode: modelMode
+            });
+        } catch (error) {
+            console.error('[손종욱 AI 비서] 모델 정보 업데이트 실패:', error);
+        }
     }
 
     private async insertCodeToEditor(code: string) {
@@ -315,9 +346,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     border-radius: 5px;
                     margin: 10px 0;
                 }
+
+                #model-info {
+                    background-color: var(--vscode-badge-background);
+                    color: var(--vscode-badge-foreground);
+                    padding: 8px 12px;
+                    border-radius: 5px;
+                    margin-bottom: 10px;
+                    font-size: 0.85em;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }
+
+                #model-info .model-name {
+                    font-weight: bold;
+                }
+
+                #model-info .model-mode {
+                    opacity: 0.8;
+                    font-size: 0.9em;
+                }
             </style>
         </head>
         <body>
+            <div id="model-info">
+                <span class="model-name">모델: <span id="current-model">로딩 중...</span></span>
+                <span class="model-mode"><span id="model-mode">auto</span></span>
+            </div>
             <div id="chat-container"></div>
             <div id="input-container">
                 <textarea id="message-input" placeholder="질문을 입력하세요... (Ctrl+Enter로 전송)"></textarea>
@@ -494,6 +550,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                                 currentStreamingMessage.querySelector('.message-content').classList.remove('streaming');
                                 currentStreamingMessage = null;
                             }
+                            break;
+
+                        case 'updateModel':
+                            document.getElementById('current-model').textContent = message.model;
+                            document.getElementById('model-mode').textContent = message.mode === 'auto' ? '자동 선택' : '수동 선택';
                             break;
                     }
                 });

@@ -105,10 +105,20 @@
           "default": "http://localhost:11434",
           "description": "Ollama API URL"
         },
+        "opencopilot.modelMode": {
+          "type": "string",
+          "enum": ["auto", "manual"],
+          "default": "auto",
+          "description": "모델 선택 방식: auto (자동 감지), manual (수동 선택)",
+          "enumDescriptions": [
+            "사용 가능한 모델을 자동으로 감지하여 최적의 모델 선택",
+            "수동으로 지정한 모델 사용"
+          ]
+        },
         "opencopilot.model": {
           "type": "string",
           "default": "deepseek-coder:6.7b",
-          "description": "사용할 Ollama 모델 (예: deepseek-coder:6.7b, codellama:7b, mistral:7b)"
+          "description": "사용할 Ollama 모델 (modelMode가 'manual'일 때만 적용됩니다)"
         },
         "opencopilot.enableInlineCompletion": {
           "type": "boolean",
