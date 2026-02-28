@@ -76,7 +76,7 @@ export class OllamaService {
         
         if (modelMode === 'manual') {
             // 수동 모드: 설정된 모델 반환
-            const manualModel = this.config.get<string>('model', 'deepseek-coder:6.7b');
+            const manualModel = this.config.get<string>('model', 'qwen2.5-coder:32b');
             console.log(`[손종욱 AI 비서] 수동 모드: ${manualModel} 모델 사용`);
             return manualModel;
         }
@@ -93,20 +93,24 @@ export class OllamaService {
             
             if (availableModels.length === 0) {
                 console.warn('[손종욱 AI 비서] 사용 가능한 모델이 없습니다. 기본 모델 사용');
-                const defaultModel = this.config.get<string>('model', 'deepseek-coder:6.7b');
+                const defaultModel = this.config.get<string>('model', 'qwen2.5-coder:32b');
                 this.cachedModel = defaultModel;
                 this.modelCacheTime = now;
                 return defaultModel;
             }
 
-            // 모델 우선순위 (한국어 지원 및 코딩 성능 기준)
+            // 모델 우선순위 (로컬 오픈소스 코딩 성능 중심)
             const modelPriorities = [
-                /^glm4/i,              // GLM-4 (한국어 최고)
-                /^deepseek-coder/i,    // DeepSeek Coder (코딩 전문)
-                /^codellama/i,         // CodeLlama (코딩)
-                /^qwen/i,              // Qwen (한국어 지원)
-                /^mistral/i,           // Mistral
-                /^llama/i,             // Llama
+                /^qwen2\.5-coder:32b/i,
+                /^qwen2\.5-coder/i,
+                /^deepseek-coder-v2/i,
+                /^deepseek-coder/i,
+                /^glm4/i,
+                /^codestral/i,
+                /^codellama/i,
+                /^qwen/i,
+                /^llama3/i,
+                /^llama/i,
             ];
 
             // 우선순위에 따라 모델 선택
@@ -129,7 +133,7 @@ export class OllamaService {
 
         } catch (error) {
             console.error('[손종욱 AI 비서] 모델 자동 선택 실패:', error);
-            const defaultModel = this.config.get<string>('model', 'deepseek-coder:6.7b');
+            const defaultModel = this.config.get<string>('model', 'qwen2.5-coder:32b');
             return defaultModel;
         }
     }

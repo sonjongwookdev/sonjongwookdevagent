@@ -43,6 +43,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         // 웹뷰 메시지 처리
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
+                case 'webviewReady':
+                    await this.updateModelInfo();
+                    break;
+                case 'refreshModels':
+                    await this.updateModelInfo();
+                    break;
+                case 'setModelMode': {
+                    const mode = data.mode === 'manual' ? 'manual' : 'auto';
+                    const config = vscode.workspace.getConfiguration('opencopilot');
+                    await config.update('modelMode', mode, true);
+                    await this.updateModelInfo();
+                    break;
+                }
+                case 'setManualModel': {
+                    const selectedModel = typeof data.model === 'string' ? data.model : '';
+                    if (!selectedModel) {
+                        break;
+                    }
+                    const config = vscode.workspace.getConfiguration('opencopilot');
+                    await config.update('model', selectedModel, true);
+                    await config.update('modelMode', 'manual', true);
+                    await this.updateModelInfo();
+                    break;
+                }
                 case 'sendMessage':
                     await this.handleUserMessage(data.message);
                     break;
@@ -149,11 +173,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             const config = vscode.workspace.getConfiguration('opencopilot');
             const modelMode = config.get<string>('modelMode', 'auto');
             const currentModel = await this.ollamaService.getModel();
+            const availableModels = await this.ollamaService.listModels();
 
             this._view.webview.postMessage({
                 type: 'updateModel',
                 model: currentModel,
-                mode: modelMode
+                mode: modelMode,
+                models: availableModels
             });
         } catch (error) {
             console.error('[손종욱 AI 비서] 모델 정보 업데이트 실패:', error);
@@ -197,11 +223,61 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     flex-direction: column;
                 }
 
+                #top-bar {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 8px;
+                    margin-bottom: 8px;
+                    padding: 8px;
+                    border: 1px solid var(--vscode-panel-border);
+                    border-radius: 8px;
+                    background-color: var(--vscode-sideBar-background);
+                }
+
+                .top-controls {
+                    display: flex;
+                    gap: 6px;
+                    flex: 1;
+                }
+
+                .top-controls select,
+                .top-controls button {
+                    background-color: var(--vscode-dropdown-background);
+                    color: var(--vscode-dropdown-foreground);
+                    border: 1px solid var(--vscode-dropdown-border);
+                    border-radius: 6px;
+                    padding: 6px 8px;
+                    font-size: 12px;
+                    min-height: 30px;
+                }
+
+                .top-controls button {
+                    cursor: pointer;
+                }
+
+                #model-mode-select {
+                    width: 90px;
+                }
+
+                #model-select {
+                    flex: 1;
+                }
+
+                #model-status {
+                    font-size: 11px;
+                    opacity: 0.85;
+                    margin-bottom: 8px;
+                    color: var(--vscode-descriptionForeground);
+                }
+
                 #chat-container {
                     flex: 1;
                     overflow-y: auto;
                     margin-bottom: 10px;
                     padding: 10px;
+                    border: 1px solid var(--vscode-panel-border);
+                    border-radius: 8px;
                 }
 
                 .message {
@@ -279,8 +355,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 #input-container {
                     display: flex;
                     gap: 10px;
-                    padding: 10px 0;
-                    border-top: 1px solid var(--vscode-panel-border);
+                    padding-top: 10px;
                 }
 
                 #message-input {
@@ -289,7 +364,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     color: var(--vscode-input-foreground);
                     border: 1px solid var(--vscode-input-border);
                     padding: 8px;
-                    border-radius: 3px;
+                    border-radius: 8px;
                     font-family: var(--vscode-font-family);
                     resize: vertical;
                     min-height: 60px;
@@ -311,7 +386,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     border: none;
                     padding: 8px 12px;
                     cursor: pointer;
-                    border-radius: 3px;
+                    border-radius: 8px;
                     white-space: nowrap;
                 }
 
@@ -347,33 +422,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     margin: 10px 0;
                 }
 
-                #model-info {
-                    background-color: var(--vscode-badge-background);
-                    color: var(--vscode-badge-foreground);
-                    padding: 8px 12px;
-                    border-radius: 5px;
-                    margin-bottom: 10px;
-                    font-size: 0.85em;
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                }
-
-                #model-info .model-name {
-                    font-weight: bold;
-                }
-
-                #model-info .model-mode {
-                    opacity: 0.8;
-                    font-size: 0.9em;
-                }
             </style>
         </head>
         <body>
-            <div id="model-info">
-                <span class="model-name">모델: <span id="current-model">로딩 중...</span></span>
-                <span class="model-mode"><span id="model-mode">auto</span></span>
+            <div id="top-bar">
+                <div class="top-controls">
+                    <select id="model-mode-select" title="모델 선택 모드">
+                        <option value="auto">Auto</option>
+                        <option value="manual">Manual</option>
+                    </select>
+                    <select id="model-select" title="모델 선택"></select>
+                    <button id="refresh-models" title="모델 목록 새로고침">새로고침</button>
+                </div>
             </div>
+            <div id="model-status">로컬 모델 준비 중...</div>
             <div id="chat-container"></div>
             <div id="input-container">
                 <textarea id="message-input" placeholder="질문을 입력하세요... (Ctrl+Enter로 전송)"></textarea>
@@ -389,12 +451,39 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 const messageInput = document.getElementById('message-input');
                 const sendButton = document.getElementById('send-button');
                 const clearButton = document.getElementById('clear-button');
+                const modelModeSelect = document.getElementById('model-mode-select');
+                const modelSelect = document.getElementById('model-select');
+                const refreshModelsButton = document.getElementById('refresh-models');
+                const modelStatus = document.getElementById('model-status');
 
                 let isStreaming = false;
                 let currentStreamingMessage = null;
 
                 sendButton.addEventListener('click', sendMessage);
                 clearButton.addEventListener('click', clearChat);
+                refreshModelsButton.addEventListener('click', () => {
+                    vscode.postMessage({ type: 'refreshModels' });
+                });
+
+                modelModeSelect.addEventListener('change', () => {
+                    const mode = modelModeSelect.value;
+                    modelSelect.disabled = mode !== 'manual';
+                    vscode.postMessage({ type: 'setModelMode', mode });
+                });
+
+                modelSelect.addEventListener('change', () => {
+                    if (modelModeSelect.value !== 'manual') {
+                        return;
+                    }
+                    const selectedModel = modelSelect.value;
+                    if (!selectedModel) {
+                        return;
+                    }
+                    vscode.postMessage({
+                        type: 'setManualModel',
+                        model: selectedModel
+                    });
+                });
 
                 messageInput.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter' && e.ctrlKey) {
@@ -498,6 +587,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     });
                 }
 
+                function updateModelOptions(models, currentModel) {
+                    const safeModels = Array.isArray(models) ? models : [];
+                    modelSelect.innerHTML = '';
+
+                    if (safeModels.length === 0) {
+                        const option = document.createElement('option');
+                        option.value = '';
+                        option.textContent = '모델 없음 (ollama pull 필요)';
+                        modelSelect.appendChild(option);
+                        return;
+                    }
+
+                    safeModels.forEach(modelName => {
+                        const option = document.createElement('option');
+                        option.value = modelName;
+                        option.textContent = modelName;
+                        if (modelName === currentModel) {
+                            option.selected = true;
+                        }
+                        modelSelect.appendChild(option);
+                    });
+                }
+
                 // 메시지 수신
                 window.addEventListener('message', event => {
                     const message = event.data;
@@ -553,11 +665,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                             break;
 
                         case 'updateModel':
-                            document.getElementById('current-model').textContent = message.model;
-                            document.getElementById('model-mode').textContent = message.mode === 'auto' ? '자동 선택' : '수동 선택';
+                            modelModeSelect.value = message.mode === 'manual' ? 'manual' : 'auto';
+                            modelSelect.disabled = modelModeSelect.value !== 'manual';
+                            updateModelOptions(message.models, message.model);
+                            modelStatus.textContent = 
+                                modelModeSelect.value === 'auto'
+                                    ? '현재 모델: ' + message.model + ' (Auto - 로컬 최적 모델 선택)'
+                                    : '현재 모델: ' + message.model + ' (Manual - 직접 선택)';
                             break;
                     }
                 });
+
+                vscode.postMessage({ type: 'webviewReady' });
             </script>
         </body>
         </html>`;

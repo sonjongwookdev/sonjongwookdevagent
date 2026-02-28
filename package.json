@@ -117,8 +117,8 @@
         },
         "opencopilot.model": {
           "type": "string",
-          "default": "deepseek-coder:6.7b",
-          "description": "사용할 Ollama 모델 (modelMode가 'manual'일 때만 적용됩니다)"
+          "default": "qwen2.5-coder:32b",
+          "description": "사용할 로컬 Ollama 모델 (modelMode가 'manual'일 때만 적용됩니다)"
         },
         "opencopilot.enableInlineCompletion": {
           "type": "boolean",
