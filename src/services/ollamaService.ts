@@ -233,7 +233,7 @@ export class OllamaService {
     }
 
     async getChatCompletion(
-        messages: { role: string; content: string }[],
+        messages: { role: string; content: string; images?: string[] }[],
         onStream?: (chunk: string) => void
     ): Promise<string> {
         // Ollama의 chat API 사용

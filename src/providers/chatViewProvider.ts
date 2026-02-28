@@ -4,6 +4,12 @@ import { OllamaService } from '../services/ollamaService';
 interface Message {
     role: 'user' | 'assistant' | 'system';
     content: string;
+    images?: string[];
+}
+
+interface AttachmentPayload {
+    notes?: string[];
+    images?: Array<{ name: string; base64: string }>;
 }
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
@@ -68,7 +74,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     break;
                 }
                 case 'sendMessage':
-                    await this.handleUserMessage(data.message);
+                    await this.handleUserMessage(data.message, data.attachments);
                     break;
                 case 'clearChat':
                     this.messages = [];
@@ -89,16 +95,42 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         await this.handleUserMessage(message);
     }
 
-    private async handleUserMessage(userMessage: string) {
+    private async handleUserMessage(userMessage: string, attachments?: AttachmentPayload) {
         if (!this._view) {
             return;
         }
 
+        const notes = (attachments?.notes || []).filter(Boolean);
+        const imagePayloads = (attachments?.images || []).filter(img => img?.base64);
+        const imageNames = imagePayloads.map(img => img.name || 'image');
+
+        let composedMessage = userMessage;
+        if (notes.length > 0 || imageNames.length > 0) {
+            const attachmentLines: string[] = [];
+            if (notes.length > 0) {
+                attachmentLines.push('첨부 파일/폴더:');
+                attachmentLines.push(...notes.map(n => `- ${n}`));
+            }
+            if (imageNames.length > 0) {
+                attachmentLines.push('첨부 이미지:');
+                attachmentLines.push(...imageNames.map(n => `- ${n}`));
+            }
+            composedMessage += `\n\n[첨부 정보]\n${attachmentLines.join('\n')}`;
+        }
+
+        const userDisplayMessage = imageNames.length > 0
+            ? `${userMessage}\n\n(이미지 ${imageNames.length}개 첨부)`
+            : userMessage;
+
         // 사용자 메시지 추가
-        this.messages.push({ role: 'user', content: userMessage });
+        this.messages.push({
+            role: 'user',
+            content: composedMessage,
+            images: imagePayloads.map(img => img.base64),
+        });
         this._view.webview.postMessage({
             type: 'addMessage',
-            message: { role: 'user', content: userMessage },
+            message: { role: 'user', content: userDisplayMessage },
         });
 
         // 어시스턴트 응답 시작
@@ -389,6 +421,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     display: flex;
                     gap: 8px;
                     padding-top: 10px;
+                    align-items: stretch;
                 }
 
                 #message-input {
@@ -403,6 +436,49 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     min-height: 72px;
                 }
 
+                #composer-left {
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                }
+
+                #attachment-list {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 6px;
+                    min-height: 0;
+                }
+
+                .attachment-chip {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    max-width: 100%;
+                    padding: 4px 8px;
+                    border-radius: 999px;
+                    border: 1px solid var(--vscode-panel-border);
+                    background-color: var(--vscode-editor-inactiveSelectionBackground);
+                    font-size: 11px;
+                }
+
+                .attachment-chip .name {
+                    max-width: 180px;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+
+                .attachment-chip .remove {
+                    border: none;
+                    background: transparent;
+                    color: inherit;
+                    cursor: pointer;
+                    padding: 0 2px;
+                    border-radius: 4px;
+                    font-size: 11px;
+                }
+
                 #message-input:focus {
                     outline: 1px solid var(--vscode-focusBorder);
                 }
@@ -411,6 +487,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     display: flex;
                     flex-direction: column;
                     gap: 6px;
+                    width: 70px;
                 }
 
                 button {
@@ -425,14 +502,27 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
                 #send-button {
                     font-weight: 600;
+                    min-height: 44px;
+                    border-radius: 12px;
                 }
 
                 #clear-button {
                     background-color: var(--vscode-button-secondaryBackground);
                     color: var(--vscode-button-secondaryForeground);
+                    min-height: 40px;
                 }
 
                 #clear-button:hover {
+                    background-color: var(--vscode-button-secondaryHoverBackground);
+                }
+
+                #attach-button {
+                    background-color: var(--vscode-button-secondaryBackground);
+                    color: var(--vscode-button-secondaryForeground);
+                    min-height: 36px;
+                }
+
+                #attach-button:hover {
                     background-color: var(--vscode-button-secondaryHoverBackground);
                 }
 
@@ -535,12 +625,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             <div id="model-status">로컬 모델 준비 중...</div>
             <div id="chat-container"></div>
             <div id="input-container">
-                <textarea id="message-input" placeholder="질문을 입력하세요... (Ctrl+Enter로 전송)"></textarea>
+                <div id="composer-left">
+                    <div id="attachment-list"></div>
+                    <textarea id="message-input" placeholder="질문을 입력하세요... (Ctrl+Enter로 전송)"></textarea>
+                </div>
                 <div class="button-group">
+                    <button id="attach-button" title="파일/폴더/이미지 첨부">첨부</button>
                     <button id="send-button">전송</button>
                     <button id="clear-button">초기화</button>
                 </div>
             </div>
+            <input id="file-input" type="file" multiple style="display:none;" />
 
             <script>
                 const vscode = acquireVsCodeApi();
@@ -548,6 +643,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 const messageInput = document.getElementById('message-input');
                 const sendButton = document.getElementById('send-button');
                 const clearButton = document.getElementById('clear-button');
+                const attachButton = document.getElementById('attach-button');
+                const fileInput = document.getElementById('file-input');
+                const attachmentList = document.getElementById('attachment-list');
                 const modelModeSelect = document.getElementById('model-mode-select');
                 const modelSelect = document.getElementById('model-select');
                 const refreshModelsButton = document.getElementById('refresh-models');
@@ -558,9 +656,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
                 let isStreaming = false;
                 let currentStreamingMessage = null;
+                let attachments = [];
 
                 sendButton.addEventListener('click', sendMessage);
                 clearButton.addEventListener('click', clearChat);
+                attachButton.addEventListener('click', () => fileInput.click());
+                fileInput.addEventListener('change', async () => {
+                    await addFiles(Array.from(fileInput.files || []));
+                    fileInput.value = '';
+                });
                 refreshModelsButton.addEventListener('click', () => {
                     vscode.postMessage({ type: 'refreshModels' });
                 });
@@ -592,23 +696,243 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     }
                 });
 
+                messageInput.addEventListener('paste', async (e) => {
+                    const items = Array.from((e.clipboardData && e.clipboardData.items) || []);
+                    const fileItems = items.filter(item => item.kind === 'file');
+                    if (fileItems.length === 0) {
+                        return;
+                    }
+
+                    e.preventDefault();
+                    const files = fileItems
+                        .map(item => item.getAsFile())
+                        .filter(Boolean);
+                    await addFiles(files);
+                });
+
+                messageInput.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    messageInput.style.outline = '1px solid var(--vscode-focusBorder)';
+                });
+
+                messageInput.addEventListener('dragleave', () => {
+                    messageInput.style.outline = '';
+                });
+
+                messageInput.addEventListener('drop', async (e) => {
+                    e.preventDefault();
+                    messageInput.style.outline = '';
+                    const dt = e.dataTransfer;
+                    if (!dt) {
+                        return;
+                    }
+
+                    const itemList = Array.from(dt.items || []);
+                    const entries = itemList
+                        .map(item => item.webkitGetAsEntry && item.webkitGetAsEntry())
+                        .filter(Boolean);
+
+                    if (entries.length > 0) {
+                        await addEntries(entries);
+                        return;
+                    }
+
+                    await addFiles(Array.from(dt.files || []));
+                });
+
                 function sendMessage() {
                     const message = messageInput.value.trim();
-                    if (!message || isStreaming) return;
+                    if ((!message && attachments.length === 0) || isStreaming) return;
+
+                    const payload = buildAttachmentPayload();
 
                     vscode.postMessage({
                         type: 'sendMessage',
-                        message: message
+                        message: message || '(첨부 파일/이미지 분석 요청)',
+                        attachments: payload
                     });
 
                     messageInput.value = '';
+                    attachments = [];
+                    renderAttachments();
                     messageInput.focus();
                 }
 
                 function clearChat() {
                     if (confirm('채팅 기록을 모두 삭제하시겠습니까?')) {
                         vscode.postMessage({ type: 'clearChat' });
+                        attachments = [];
+                        renderAttachments();
                     }
+                }
+
+                function formatBytes(size) {
+                    if (!size || size <= 0) return '0B';
+                    const units = ['B', 'KB', 'MB', 'GB'];
+                    let value = size;
+                    let unitIndex = 0;
+                    while (value >= 1024 && unitIndex < units.length - 1) {
+                        value /= 1024;
+                        unitIndex += 1;
+                    }
+                    return value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1) + units[unitIndex];
+                }
+
+                function renderAttachments() {
+                    attachmentList.innerHTML = '';
+                    attachments.forEach((item, index) => {
+                        const chip = document.createElement('div');
+                        chip.className = 'attachment-chip';
+
+                        const name = document.createElement('span');
+                        name.className = 'name';
+                        if (item.type === 'folder') {
+                            name.textContent = '📁 ' + item.name + ' (' + item.children + '개 항목)';
+                        } else if (item.type === 'image') {
+                            name.textContent = '🖼️ ' + item.name;
+                        } else {
+                            name.textContent = '📄 ' + item.name + ' (' + formatBytes(item.size) + ')';
+                        }
+
+                        const remove = document.createElement('button');
+                        remove.className = 'remove';
+                        remove.textContent = '✕';
+                        remove.title = '첨부 제거';
+                        remove.onclick = () => {
+                            attachments.splice(index, 1);
+                            renderAttachments();
+                        };
+
+                        chip.appendChild(name);
+                        chip.appendChild(remove);
+                        attachmentList.appendChild(chip);
+                    });
+                }
+
+                function readFileAsDataUrl(file) {
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result || '');
+                        reader.onerror = reject;
+                        reader.readAsDataURL(file);
+                    });
+                }
+
+                async function addFiles(files) {
+                    for (const file of files) {
+                        if (!file) continue;
+                        if (file.type && file.type.startsWith('image/')) {
+                            const dataUrl = await readFileAsDataUrl(file);
+                            const base64 = String(dataUrl).split(',')[1] || '';
+                            attachments.push({
+                                type: 'image',
+                                name: file.name || 'image',
+                                size: file.size || 0,
+                                base64,
+                            });
+                        } else {
+                            attachments.push({
+                                type: 'file',
+                                name: file.name || 'file',
+                                size: file.size || 0,
+                            });
+                        }
+                    }
+                    renderAttachments();
+                }
+
+                function walkEntry(entry, path, collector) {
+                    return new Promise((resolve) => {
+                        if (entry.isFile) {
+                            entry.file((file) => {
+                                collector.push({
+                                    type: file.type && file.type.startsWith('image/') ? 'image' : 'file',
+                                    name: path + file.name,
+                                    size: file.size || 0,
+                                    file,
+                                });
+                                resolve();
+                            }, () => resolve());
+                            return;
+                        }
+
+                        if (entry.isDirectory) {
+                            const dirReader = entry.createReader();
+                            const folderItem = {
+                                type: 'folder',
+                                name: path + entry.name,
+                                children: 0,
+                            };
+                            attachments.push(folderItem);
+
+                            const readEntries = () => {
+                                dirReader.readEntries(async (entries) => {
+                                    if (!entries.length) {
+                                        resolve();
+                                        return;
+                                    }
+                                    folderItem.children += entries.length;
+                                    for (const child of entries) {
+                                        await walkEntry(child, path + entry.name + '/', collector);
+                                    }
+                                    readEntries();
+                                }, () => resolve());
+                            };
+
+                            readEntries();
+                            return;
+                        }
+
+                        resolve();
+                    });
+                }
+
+                async function addEntries(entries) {
+                    const collectedFiles = [];
+                    for (const entry of entries) {
+                        await walkEntry(entry, '', collectedFiles);
+                    }
+
+                    for (const item of collectedFiles) {
+                        if (item.type === 'image') {
+                            const dataUrl = await readFileAsDataUrl(item.file);
+                            const base64 = String(dataUrl).split(',')[1] || '';
+                            attachments.push({
+                                type: 'image',
+                                name: item.name,
+                                size: item.size,
+                                base64,
+                            });
+                        } else {
+                            attachments.push({
+                                type: 'file',
+                                name: item.name,
+                                size: item.size,
+                            });
+                        }
+                    }
+
+                    renderAttachments();
+                }
+
+                function buildAttachmentPayload() {
+                    const notes = attachments
+                        .filter(item => item.type === 'file' || item.type === 'folder')
+                        .map(item => {
+                            if (item.type === 'folder') {
+                                return '폴더: ' + item.name + ' (' + item.children + '개 항목)';
+                            }
+                            return '파일: ' + item.name + ' (' + formatBytes(item.size) + ')';
+                        });
+
+                    const images = attachments
+                        .filter(item => item.type === 'image' && item.base64)
+                        .map(item => ({
+                            name: item.name,
+                            base64: item.base64,
+                        }));
+
+                    return { notes, images };
                 }
 
                 function addMessage(role, content) {
