@@ -201,6 +201,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             return;
         }
 
+        const config = vscode.workspace.getConfiguration('opencopilot');
+        const modelMode = config.get<string>('modelMode', 'auto');
+        const fallbackModel = config.get<string>('model', 'qwen2.5-coder:32b');
+
         try {
             this._view.webview.postMessage({
                 type: 'modelLoading',
@@ -208,16 +212,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 task: 'Ollama 연결 확인 중'
             });
 
-            const config = vscode.workspace.getConfiguration('opencopilot');
-            const modelMode = config.get<string>('modelMode', 'auto');
-
             this._view.webview.postMessage({
                 type: 'modelLoading',
                 percent: 45,
                 task: modelMode === 'auto' ? '최적 모델 계산 중' : '수동 모델 확인 중'
             });
 
-            const currentModel = await this.ollamaService.getModel();
+            const currentModel = await Promise.race<string>([
+                this.ollamaService.getModel(),
+                new Promise<string>(resolve => setTimeout(() => resolve(fallbackModel), 6000)),
+            ]);
 
             this._view.webview.postMessage({
                 type: 'modelLoading',
@@ -225,7 +229,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 task: '설치된 모델 목록 불러오는 중'
             });
 
-            const availableModels = await this.ollamaService.listModels();
+            const availableModels = await Promise.race<string[]>([
+                this.ollamaService.listModels(),
+                new Promise<string[]>(resolve => setTimeout(() => resolve([]), 6000)),
+            ]);
 
             this._view.webview.postMessage({
                 type: 'updateModel',
@@ -242,9 +249,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         } catch (error) {
             console.error('[손종욱 AI 비서] 모델 정보 업데이트 실패:', error);
             this._view.webview.postMessage({
+                type: 'updateModel',
+                model: fallbackModel,
+                mode: modelMode,
+                models: []
+            });
+            this._view.webview.postMessage({
                 type: 'modelLoading',
-                percent: 0,
-                task: '모델 정보 로딩 실패',
+                percent: 100,
+                task: '기본 모델로 준비 완료',
                 isError: true
             });
         }
@@ -419,7 +432,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
                 #input-container {
                     display: flex;
-                    gap: 8px;
                     padding-top: 10px;
                     align-items: stretch;
                 }
@@ -429,7 +441,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     background-color: var(--vscode-input-background);
                     color: var(--vscode-input-foreground);
                     border: 1px solid var(--vscode-input-border);
-                    padding: 10px 12px;
+                    padding: 12px 44px 12px 12px;
                     border-radius: 12px;
                     font-family: var(--vscode-font-family);
                     resize: vertical;
@@ -441,6 +453,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     display: flex;
                     flex-direction: column;
                     gap: 6px;
+                    position: relative;
+                    border: 1px solid var(--vscode-input-border);
+                    border-radius: 12px;
+                    background-color: var(--vscode-input-background);
+                    padding: 8px;
+                }
+
+                #composer-left.drag-over {
+                    outline: 1px solid var(--vscode-focusBorder);
                 }
 
                 #attachment-list {
@@ -481,13 +502,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
                 #message-input:focus {
                     outline: 1px solid var(--vscode-focusBorder);
-                }
-
-                .button-group {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 6px;
-                    width: 70px;
                 }
 
                 button {
@@ -577,33 +591,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     padding: 4px 6px;
                     border-radius: 999px;
                     background-color: var(--vscode-button-background);
-                    color: var(--vscode-button-foreground);
-                }
-
-                #model-loading-task {
-                    font-size: 11px;
-                    color: var(--vscode-descriptionForeground);
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    max-width: 180px;
-                }
-
-                #model-loading-track {
-                    flex: 1;
-                    height: 6px;
+                    position: absolute;
+                    right: 12px;
+                    bottom: 12px;
+                    width: 28px;
+                    height: 28px;
+                    min-height: 28px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 0;
                     border-radius: 999px;
-                    background-color: var(--vscode-input-background);
-                    overflow: hidden;
-                }
-
-                #model-loading-fill {
-                    height: 100%;
-                    width: 0%;
+                    background-color: transparent;
+                    color: var(--vscode-foreground);
+                    border: 1px solid var(--vscode-input-border);
+                    font-size: 14px;
                     background-color: var(--vscode-progressBar-background);
                     transition: width 0.25s ease;
-                }
-
+                #send-button:hover {
+                    background-color: var(--vscode-toolbar-hoverBackground);
             </style>
         </head>
         <body>
@@ -627,12 +633,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             <div id="input-container">
                 <div id="composer-left">
                     <div id="attachment-list"></div>
-                    <textarea id="message-input" placeholder="질문을 입력하세요... (Ctrl+Enter로 전송)"></textarea>
-                </div>
-                <div class="button-group">
-                    <button id="attach-button" title="파일/폴더/이미지 첨부">첨부</button>
-                    <button id="send-button">전송</button>
-                    <button id="clear-button">초기화</button>
+                    <textarea id="message-input" placeholder="질문을 입력하세요... (Ctrl+Enter로 전송, 파일/폴더/이미지 드래그 앤 드롭)"></textarea>
+                    <button id="send-button" title="전송">➤</button>
                 </div>
             </div>
             <input id="file-input" type="file" multiple style="display:none;" />
@@ -640,10 +642,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             <script>
                 const vscode = acquireVsCodeApi();
                 const chatContainer = document.getElementById('chat-container');
+                const composerLeft = document.getElementById('composer-left');
                 const messageInput = document.getElementById('message-input');
                 const sendButton = document.getElementById('send-button');
-                const clearButton = document.getElementById('clear-button');
-                const attachButton = document.getElementById('attach-button');
                 const fileInput = document.getElementById('file-input');
                 const attachmentList = document.getElementById('attachment-list');
                 const modelModeSelect = document.getElementById('model-mode-select');
@@ -659,8 +660,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 let attachments = [];
 
                 sendButton.addEventListener('click', sendMessage);
-                clearButton.addEventListener('click', clearChat);
-                attachButton.addEventListener('click', () => fileInput.click());
                 fileInput.addEventListener('change', async () => {
                     await addFiles(Array.from(fileInput.files || []));
                     fileInput.value = '';
@@ -710,18 +709,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     await addFiles(files);
                 });
 
-                messageInput.addEventListener('dragover', (e) => {
+                composerLeft.addEventListener('dragover', (e) => {
                     e.preventDefault();
-                    messageInput.style.outline = '1px solid var(--vscode-focusBorder)';
+                    composerLeft.classList.add('drag-over');
                 });
 
-                messageInput.addEventListener('dragleave', () => {
-                    messageInput.style.outline = '';
+                composerLeft.addEventListener('dragleave', () => {
+                    composerLeft.classList.remove('drag-over');
                 });
 
-                messageInput.addEventListener('drop', async (e) => {
+                composerLeft.addEventListener('drop', async (e) => {
                     e.preventDefault();
-                    messageInput.style.outline = '';
+                    composerLeft.classList.remove('drag-over');
                     const dt = e.dataTransfer;
                     if (!dt) {
                         return;
@@ -756,14 +755,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     attachments = [];
                     renderAttachments();
                     messageInput.focus();
-                }
-
-                function clearChat() {
-                    if (confirm('채팅 기록을 모두 삭제하시겠습니까?')) {
-                        vscode.postMessage({ type: 'clearChat' });
-                        attachments = [];
-                        renderAttachments();
-                    }
                 }
 
                 function formatBytes(size) {
