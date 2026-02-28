@@ -1,0 +1,174 @@
+{
+  "name": "sonjongwookdevagent",
+  "displayName": "Sonjongwook Dev Agent",
+  "description": "완전한 오픈소스 AI 코딩 어시스턴트 - GitHub Copilot의 모든 기능을 오픈소스로 (DeepSeek Coder, GLM-4 지원)",
+  "version": "1.0.0",
+  "publisher": "sonjongwook",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Machine Learning",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "opencopilot.startChat",
+        "title": "Open Copilot: 채팅 시작",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "opencopilot.explainCode",
+        "title": "Open Copilot: 코드 설명"
+      },
+      {
+        "command": "opencopilot.refactorCode",
+        "title": "Open Copilot: 코드 리팩토링"
+      },
+      {
+        "command": "opencopilot.fixCode",
+        "title": "Open Copilot: 코드 수정"
+      },
+      {
+        "command": "opencopilot.generateTests",
+        "title": "Open Copilot: 테스트 생성"
+      },
+      {
+        "command": "opencopilot.generateDocs",
+        "title": "Open Copilot: 문서 생성"
+      },
+      {
+        "command": "opencopilot.inlineCompletion",
+        "title": "Open Copilot: 인라인 완성 토글"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "opencopilot.startChat",
+        "key": "ctrl+shift+l",
+        "mac": "cmd+shift+l"
+      },
+      {
+        "command": "opencopilot.explainCode",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e",
+        "when": "editorHasSelection"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "submenu": "opencopilot.submenu",
+          "group": "opencopilot"
+        }
+      ],
+      "opencopilot.submenu": [
+        {
+          "command": "opencopilot.explainCode",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "opencopilot.refactorCode",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "opencopilot.fixCode",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "opencopilot.generateTests",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "opencopilot.generateDocs",
+          "when": "editorHasSelection"
+        }
+      ]
+    },
+    "submenus": [
+      {
+        "id": "opencopilot.submenu",
+        "label": "손종욱 AI 비서"
+      }
+    ],
+    "configuration": {
+      "title": "손종욱 AI 코딩 비서",
+      "properties": {
+        "opencopilot.ollamaUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Ollama API URL"
+        },
+        "opencopilot.model": {
+          "type": "string",
+          "default": "deepseek-coder:6.7b",
+          "description": "사용할 Ollama 모델 (예: deepseek-coder:6.7b, codellama:7b, mistral:7b)"
+        },
+        "opencopilot.enableInlineCompletion": {
+          "type": "boolean",
+          "default": true,
+          "description": "인라인 코드 완성 활성화"
+        },
+        "opencopilot.completionDelay": {
+          "type": "number",
+          "default": 300,
+          "description": "코드 완성 지연 시간 (ms)"
+        },
+        "opencopilot.maxTokens": {
+          "type": "number",
+          "default": 2000,
+          "description": "최대 토큰 수"
+        },
+        "opencopilot.temperature": {
+          "type": "number",
+          "default": 0.2,
+          "description": "Temperature (0.0-1.0)"
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "opencopilot",
+          "title": "손종욱 AI 비서",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "opencopilot": [
+        {
+          "type": "webview",
+          "id": "opencopilot.chatView",
+          "name": "손종욱 전용 AI 코딩 비서"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.x",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "@vscode/test-electron": "^2.3.8",
+    "eslint": "^8.54.0",
+    "typescript": "^5.3.2"
+  },
+  "dependencies": {
+    "axios": "^1.6.2"
+  }
+}
