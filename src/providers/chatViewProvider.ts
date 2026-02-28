@@ -170,9 +170,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
 
         try {
+            this._view.webview.postMessage({
+                type: 'modelLoading',
+                percent: 10,
+                task: 'Ollama 연결 확인 중'
+            });
+
             const config = vscode.workspace.getConfiguration('opencopilot');
             const modelMode = config.get<string>('modelMode', 'auto');
+
+            this._view.webview.postMessage({
+                type: 'modelLoading',
+                percent: 45,
+                task: modelMode === 'auto' ? '최적 모델 계산 중' : '수동 모델 확인 중'
+            });
+
             const currentModel = await this.ollamaService.getModel();
+
+            this._view.webview.postMessage({
+                type: 'modelLoading',
+                percent: 75,
+                task: '설치된 모델 목록 불러오는 중'
+            });
+
             const availableModels = await this.ollamaService.listModels();
 
             this._view.webview.postMessage({
@@ -181,8 +201,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 mode: modelMode,
                 models: availableModels
             });
+
+            this._view.webview.postMessage({
+                type: 'modelLoading',
+                percent: 100,
+                task: '모델 준비 완료'
+            });
         } catch (error) {
             console.error('[손종욱 AI 비서] 모델 정보 업데이트 실패:', error);
+            this._view.webview.postMessage({
+                type: 'modelLoading',
+                percent: 0,
+                task: '모델 정보 로딩 실패',
+                isError: true
+            });
         }
     }
 
@@ -272,35 +304,36 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 }
 
                 #chat-container {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
                     flex: 1;
                     overflow-y: auto;
                     margin-bottom: 10px;
-                    padding: 10px;
-                    border: 1px solid var(--vscode-panel-border);
-                    border-radius: 8px;
+                    padding: 8px 4px;
                 }
 
                 .message {
-                    margin-bottom: 15px;
-                    padding: 10px;
-                    border-radius: 5px;
+                    max-width: 88%;
+                    padding: 10px 12px;
+                    border-radius: 12px;
                 }
 
                 .message.user {
-                    background-color: var(--vscode-input-background);
-                    border-left: 3px solid var(--vscode-button-background);
+                    margin-left: auto;
+                    background-color: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    border-radius: 12px 12px 4px 12px;
                 }
 
                 .message.assistant {
+                    margin-right: auto;
                     background-color: var(--vscode-editor-inactiveSelectionBackground);
-                    border-left: 3px solid var(--vscode-textLink-foreground);
+                    border-radius: 12px 12px 12px 4px;
                 }
 
                 .message-role {
-                    font-weight: bold;
-                    margin-bottom: 5px;
-                    font-size: 0.9em;
-                    opacity: 0.8;
+                    display: none;
                 }
 
                 .message-content {
@@ -354,7 +387,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
                 #input-container {
                     display: flex;
-                    gap: 10px;
+                    gap: 8px;
                     padding-top: 10px;
                 }
 
@@ -363,11 +396,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     background-color: var(--vscode-input-background);
                     color: var(--vscode-input-foreground);
                     border: 1px solid var(--vscode-input-border);
-                    padding: 8px;
-                    border-radius: 8px;
+                    padding: 10px 12px;
+                    border-radius: 12px;
                     font-family: var(--vscode-font-family);
                     resize: vertical;
-                    min-height: 60px;
+                    min-height: 72px;
                 }
 
                 #message-input:focus {
@@ -377,17 +410,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 .button-group {
                     display: flex;
                     flex-direction: column;
-                    gap: 5px;
+                    gap: 6px;
                 }
 
                 button {
                     background-color: var(--vscode-button-background);
                     color: var(--vscode-button-foreground);
                     border: none;
-                    padding: 8px 12px;
+                    padding: 10px 12px;
                     cursor: pointer;
-                    border-radius: 8px;
+                    border-radius: 10px;
                     white-space: nowrap;
+                }
+
+                #send-button {
+                    font-weight: 600;
+                }
+
+                #clear-button {
+                    background-color: var(--vscode-button-secondaryBackground);
+                    color: var(--vscode-button-secondaryForeground);
+                }
+
+                #clear-button:hover {
+                    background-color: var(--vscode-button-secondaryHoverBackground);
                 }
 
                 button:hover {
@@ -418,8 +464,54 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     background-color: var(--vscode-inputValidation-errorBackground);
                     border: 1px solid var(--vscode-inputValidation-errorBorder);
                     padding: 10px;
-                    border-radius: 5px;
+                    border-radius: 10px;
                     margin: 10px 0;
+                }
+
+                #model-loading {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    margin-bottom: 8px;
+                    padding: 8px;
+                    border: 1px solid var(--vscode-panel-border);
+                    border-radius: 10px;
+                    background-color: var(--vscode-editor-inactiveSelectionBackground);
+                }
+
+                #model-loading-percent {
+                    min-width: 42px;
+                    text-align: center;
+                    font-size: 11px;
+                    font-weight: 700;
+                    padding: 4px 6px;
+                    border-radius: 999px;
+                    background-color: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                }
+
+                #model-loading-task {
+                    font-size: 11px;
+                    color: var(--vscode-descriptionForeground);
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    max-width: 180px;
+                }
+
+                #model-loading-track {
+                    flex: 1;
+                    height: 6px;
+                    border-radius: 999px;
+                    background-color: var(--vscode-input-background);
+                    overflow: hidden;
+                }
+
+                #model-loading-fill {
+                    height: 100%;
+                    width: 0%;
+                    background-color: var(--vscode-progressBar-background);
+                    transition: width 0.25s ease;
                 }
 
             </style>
@@ -434,6 +526,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     <select id="model-select" title="모델 선택"></select>
                     <button id="refresh-models" title="모델 목록 새로고침">새로고침</button>
                 </div>
+            </div>
+            <div id="model-loading">
+                <div id="model-loading-percent">0%</div>
+                <div id="model-loading-track"><div id="model-loading-fill"></div></div>
+                <div id="model-loading-task">로컬 모델 준비 중</div>
             </div>
             <div id="model-status">로컬 모델 준비 중...</div>
             <div id="chat-container"></div>
@@ -455,6 +552,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 const modelSelect = document.getElementById('model-select');
                 const refreshModelsButton = document.getElementById('refresh-models');
                 const modelStatus = document.getElementById('model-status');
+                const modelLoadingPercent = document.getElementById('model-loading-percent');
+                const modelLoadingTask = document.getElementById('model-loading-task');
+                const modelLoadingFill = document.getElementById('model-loading-fill');
 
                 let isStreaming = false;
                 let currentStreamingMessage = null;
@@ -610,6 +710,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     });
                 }
 
+                function setModelLoading(percent, task, isError) {
+                    const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+                    modelLoadingPercent.textContent = safePercent + '%';
+                    modelLoadingTask.textContent = task || '로컬 모델 준비 중';
+                    modelLoadingFill.style.width = safePercent + '%';
+                    modelLoadingPercent.style.backgroundColor = isError
+                        ? 'var(--vscode-inputValidation-errorBorder)'
+                        : 'var(--vscode-button-background)';
+                }
+
                 // 메시지 수신
                 window.addEventListener('message', event => {
                     const message = event.data;
@@ -668,10 +778,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                             modelModeSelect.value = message.mode === 'manual' ? 'manual' : 'auto';
                             modelSelect.disabled = modelModeSelect.value !== 'manual';
                             updateModelOptions(message.models, message.model);
+                            setModelLoading(100, '모델 준비 완료', false);
                             modelStatus.textContent = 
                                 modelModeSelect.value === 'auto'
                                     ? '현재 모델: ' + message.model + ' (Auto - 로컬 최적 모델 선택)'
                                     : '현재 모델: ' + message.model + ' (Manual - 직접 선택)';
+                            break;
+
+                        case 'modelLoading':
+                            setModelLoading(message.percent, message.task, !!message.isError);
                             break;
                     }
                 });
